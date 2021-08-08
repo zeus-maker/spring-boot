@@ -281,6 +281,19 @@ public class SpringApplication {
 	 */
 	@SuppressWarnings({ "unchecked", "rawtypes" })
 	public SpringApplication(ResourceLoader resourceLoader, Class<?>... primarySources) {
+		/**
+		 * 1. 给resourceLoader属性赋值，resourceLoader属性，资源加载器，此时传入的resourceLoader参数为null；
+		 * 2. 给primarySources属性赋值，primarySources属性即SpringApplication.run(MainApplication.class,args);
+		 * 中传入的MainApplication.class，该类为SpringBoot项目的启动类，主要通过该类来扫描Configuration类加载bean；
+		 * 3. 给webApplicationType属性赋值，webApplicationType属性，代表应用类型，根据classpath存在的相应Application类来判断。
+		 * 因为后面要根据webApplicationType来确定创建哪种Environment对象和创建哪种ApplicationContext，详细分析请见后面的第3.1小节；
+		 * 4. 给initializers属性赋值，initializers属性为List<ApplicationContextInitializer<?>>集合，利用SpringBoot的SPI机制从spring.factories配置文件中加载，
+		 * 后面在初始化容器的时候会应用这些初始化器来执行一些初始化工作。因为SpringBoot自己实现的SPI机制比较重要
+		 * 5. 给listeners属性赋值，listeners属性为List<ApplicationListener<?>>集合，同样利用利用SpringBoot的SPI机制从spring.factories配置文件中加载。
+		 * 因为SpringBoot启动过程中会在不同的阶段发射一些事件，所以这些加载的监听器们就是来监听SpringBoot启动过程中的一些生命周期事件的；
+		 * 6. 给mainApplicationClass属性赋值，mainApplicationClass属性表示包含main函数的类，即这里要推断哪个类调用了main函数，
+		 * 然后把这个类的全限定名赋值给mainApplicationClass属性，用于后面启动流程中打印一些日志
+		 */
 		this.resourceLoader = resourceLoader;
 		Assert.notNull(primarySources, "PrimarySources must not be null");
 		this.primarySources = new LinkedHashSet<>(Arrays.asList(primarySources));
@@ -323,21 +336,64 @@ public class SpringApplication {
 	 * @return a running {@link ApplicationContext}
 	 */
 	public ConfigurableApplicationContext run(String... args) {
+		/**
+		 * 1. 从spring.factories配置文件中加载EventPublishingRunListener对象，该对象拥有SimpleApplicationEventMulticaster属性，即在SpringBoot启动过程的不同阶段用来发射内置的生命周期事件;
+		 * 2. 准备环境变量，包括系统变量，环境变量，命令行参数，默认变量，servlet相关配置变量，随机值以及配置文件（比如application.properties）等;
+		 * 3. 控制台打印SpringBoot的bannner标志；
+		 * 4. 根据不同类型环境创建不同类型的applicationcontext容器，因为这里是servlet环境，所以创建的是AnnotationConfigServletWebServerApplicationContext容器对象；
+		 * 5. 从spring.factories配置文件中加载FailureAnalyzers对象,用来报告SpringBoot启动过程中的异常；
+		 * 6. 为刚创建的容器对象做一些初始化工作，准备一些容器属性值等，对ApplicationContext应用一些相关的后置处理和调用各个ApplicationContextInitializer的初始化方法来执行一些初始化逻辑等；
+		 * 7. 刷新容器，这一步至关重要。比如调用bean factory的后置处理器，注册BeanPostProcessor后置处理器，初始化事件广播器且广播事件，初始化剩下的单例bean和SpringBoot创建内嵌的Tomcat服务器等等重要且复杂的逻辑都在这里实现，主要步骤可见代码的注释，关于这里的逻辑会在以后的spring源码分析专题详细分析；
+		 * 8. 执行刷新容器后的后置处理逻辑，注意这里为空方法；
+		 * 9. 调用ApplicationRunner和CommandLineRunner的run方法，我们实现这两个接口可以在spring容器启动后需要的一些东西比如加载一些业务数据等;
+		 * 10. 报告启动异常，即若启动过程中抛出异常，此时用FailureAnalyzers来报告异常;
+		 * 11. 最终返回容器对象，这里调用方法没有声明对象来接收。
+		 */
+		// 1. 统计启动时间
 		StopWatch stopWatch = new StopWatch();
 		stopWatch.start();
 		DefaultBootstrapContext bootstrapContext = createBootstrapContext();
 		ConfigurableApplicationContext context = null;
 		configureHeadlessProperty();
+		// 【1】从spring.factories配置文件中加载到EventPublishingRunListener对象并赋值给SpringApplicationRunListeners
+		// EventPublishingRunListener对象主要用来发射SpringBoot启动过程中内置的一些生命周期事件，标志每个不同启动阶段
 		SpringApplicationRunListeners listeners = getRunListeners(args);
 		listeners.starting(bootstrapContext, this.mainApplicationClass);
 		try {
 			ApplicationArguments applicationArguments = new DefaultApplicationArguments(args);
+			// 【2】准备环境变量，包括系统变量，环境变量，命令行参数，默认变量，servlet相关配置变量，随机值，
+			// JNDI属性值，以及配置文件（比如application.properties）等，注意这些环境变量是有优先级的
 			ConfigurableEnvironment environment = prepareEnvironment(listeners, bootstrapContext, applicationArguments);
 			configureIgnoreBeanInfo(environment);
 			Banner printedBanner = printBanner(environment);
+			// 【4】根据不同类型创建不同类型的spring applicationcontext容器
+			// 因为这里是servlet环境，所以创建的是AnnotationConfigServletWebServerApplicationContext容器对象
 			context = createApplicationContext();
 			context.setApplicationStartup(this.applicationStartup);
+			// 【6】为刚创建的AnnotationConfigServletWebServerApplicationContext容器对象做一些初始化工作，准备一些容器属性值等
+			// 1）为AnnotationConfigServletWebServerApplicationContext的属性AnnotatedBeanDefinitionReader和ClassPathBeanDefinitionScanner设置environgment属性
+			// 2）根据情况对ApplicationContext应用一些相关的后置处理，比如设置resourceLoader属性等
+			// 3）在容器刷新前调用各个ApplicationContextInitializer的初始化方法，ApplicationContextInitializer是在构建SpringApplication对象时从spring.factories中加载的
+			// 4）发射【ApplicationContextInitializedEvent】事件，标志context容器被创建且已准备好
+			// 5）从context容器中获取beanFactory，并向beanFactory中注册一些单例bean，比如applicationArguments，printedBanner
+			// 6）加载bean到application context，注意这里只是加载了部分bean比如mainApplication这个bean
+			// 7）发射【ApplicationPreparedEvent】事件，标志Context容器已经准备完成
 			prepareContext(bootstrapContext, context, environment, listeners, applicationArguments, printedBanner);
+			// 【7】刷新容器，这一步至关重要，以后会在分析Spring源码时详细分析，主要做了以下工作：
+			// 1）在context刷新前做一些准备工作，比如初始化一些属性设置，属性合法性校验和保存容器中的一些早期事件等；
+			// 2）让子类刷新其内部bean factory,注意SpringBoot和Spring启动的情况执行逻辑不一样
+			// 3）对bean factory进行配置，比如配置bean factory的类加载器，后置处理器等
+			// 4）完成bean factory的准备工作后，此时执行一些后置处理逻辑，子类通过重写这个方法来在BeanFactory创建并预准备完成以后做进一步的设置
+			// 在这一步，所有的bean definitions将会被加载，但此时bean还不会被实例化
+			// 5）执行BeanFactoryPostProcessor的方法即调用bean factory的后置处理器：
+			// BeanDefinitionRegistryPostProcessor（触发时机：bean定义注册之前）和BeanFactoryPostProcessor（触发时机：bean定义注册之后bean实例化之前）
+			// 6）注册bean的后置处理器BeanPostProcessor，注意不同接口类型的BeanPostProcessor；在Bean创建前后的执行时机是不一样的
+			// 7）初始化国际化MessageSource相关的组件，比如消息绑定，消息解析等
+			// 8）初始化事件广播器，如果bean factory没有包含事件广播器，那么new一个SimpleApplicationEventMulticaster广播器对象并注册到bean factory中
+			// 9）AbstractApplicationContext定义了一个模板方法onRefresh，留给子类覆写，比如ServletWebServerApplicationContext覆写了该方法来创建内嵌的tomcat容器
+			// 10）注册实现了ApplicationListener接口的监听器，之前已经有了事件广播器，此时就可以派发一些early application events
+			// 11）完成容器bean factory的初始化，并初始化所有剩余的单例bean。这一步非常重要，一些bean postprocessor会在这里调用。
+			// 12）完成容器的刷新工作，并且调用生命周期处理器的onRefresh()方法，并且发布ContextRefreshedEvent事件
 			refreshContext(context);
 			afterRefresh(context, applicationArguments);
 			stopWatch.stop();
@@ -353,6 +409,7 @@ public class SpringApplication {
 		}
 
 		try {
+			// 发射【ApplicationReadyEvent】事件，标志SpringApplication已经正在运行即已经成功启动，可以接收服务请求了。
 			listeners.running(context);
 		}
 		catch (Throwable ex) {
@@ -474,9 +531,12 @@ public class SpringApplication {
 		List<T> instances = new ArrayList<>(names.size());
 		for (String name : names) {
 			try {
+
 				Class<?> instanceClass = ClassUtils.forName(name, classLoader);
+				// 断言刚才加载的SPI扩展类是否属于SPI接口类型
 				Assert.isAssignable(type, instanceClass);
 				Constructor<?> constructor = instanceClass.getDeclaredConstructor(parameterTypes);
+				// 实例化SPI扩展类
 				T instance = (T) BeanUtils.instantiateClass(constructor, args);
 				instances.add(instance);
 			}
