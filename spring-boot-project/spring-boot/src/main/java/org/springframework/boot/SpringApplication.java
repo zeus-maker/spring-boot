@@ -370,30 +370,34 @@ public class SpringApplication {
 			// 因为这里是servlet环境，所以创建的是AnnotationConfigServletWebServerApplicationContext容器对象
 			context = createApplicationContext();
 			context.setApplicationStartup(this.applicationStartup);
-			// 【6】为刚创建的AnnotationConfigServletWebServerApplicationContext容器对象做一些初始化工作，准备一些容器属性值等
-			// 1）为AnnotationConfigServletWebServerApplicationContext的属性AnnotatedBeanDefinitionReader和ClassPathBeanDefinitionScanner设置environgment属性
-			// 2）根据情况对ApplicationContext应用一些相关的后置处理，比如设置resourceLoader属性等
-			// 3）在容器刷新前调用各个ApplicationContextInitializer的初始化方法，ApplicationContextInitializer是在构建SpringApplication对象时从spring.factories中加载的
-			// 4）发射【ApplicationContextInitializedEvent】事件，标志context容器被创建且已准备好
-			// 5）从context容器中获取beanFactory，并向beanFactory中注册一些单例bean，比如applicationArguments，printedBanner
-			// 6）加载bean到application context，注意这里只是加载了部分bean比如mainApplication这个bean
-			// 7）发射【ApplicationPreparedEvent】事件，标志Context容器已经准备完成
+			/**
+			 * 【6】为刚创建的AnnotationConfigServletWebServerApplicationContext容器对象做一些初始化工作，准备一些容器属性值等
+			 * 	1）为AnnotationConfigServletWebServerApplicationContext的属性AnnotatedBeanDefinitionReader和ClassPathBeanDefinitionScanner设置environgment属性
+			 * 	2）根据情况对ApplicationContext应用一些相关的后置处理，比如设置resourceLoader属性等
+			 * 	3）在容器刷新前调用各个ApplicationContextInitializer的初始化方法，ApplicationContextInitializer是在构建SpringApplication对象时从spring.factories中加载的
+			 * 	4）发射【ApplicationContextInitializedEvent】事件，标志context容器被创建且已准备好
+			 * 	5）从context容器中获取beanFactory，并向beanFactory中注册一些单例bean，比如applicationArguments，printedBanner
+			 *  6）加载bean到application context，注意这里只是加载了部分bean比如mainApplication这个bean
+			 * 	7）发射【ApplicationPreparedEvent】事件，标志Context容器已经准备完成
+			 */
 			prepareContext(bootstrapContext, context, environment, listeners, applicationArguments, printedBanner);
-			// 【7】刷新容器，这一步至关重要，以后会在分析Spring源码时详细分析，主要做了以下工作：
-			// 1）在context刷新前做一些准备工作，比如初始化一些属性设置，属性合法性校验和保存容器中的一些早期事件等；
-			// 2）让子类刷新其内部bean factory,注意SpringBoot和Spring启动的情况执行逻辑不一样
-			// 3）对bean factory进行配置，比如配置bean factory的类加载器，后置处理器等
-			// 4）完成bean factory的准备工作后，此时执行一些后置处理逻辑，子类通过重写这个方法来在BeanFactory创建并预准备完成以后做进一步的设置
-			// 在这一步，所有的bean definitions将会被加载，但此时bean还不会被实例化
-			// 5）执行BeanFactoryPostProcessor的方法即调用bean factory的后置处理器：
-			// BeanDefinitionRegistryPostProcessor（触发时机：bean定义注册之前）和BeanFactoryPostProcessor（触发时机：bean定义注册之后bean实例化之前）
-			// 6）注册bean的后置处理器BeanPostProcessor，注意不同接口类型的BeanPostProcessor；在Bean创建前后的执行时机是不一样的
-			// 7）初始化国际化MessageSource相关的组件，比如消息绑定，消息解析等
-			// 8）初始化事件广播器，如果bean factory没有包含事件广播器，那么new一个SimpleApplicationEventMulticaster广播器对象并注册到bean factory中
-			// 9）AbstractApplicationContext定义了一个模板方法onRefresh，留给子类覆写，比如ServletWebServerApplicationContext覆写了该方法来创建内嵌的tomcat容器
-			// 10）注册实现了ApplicationListener接口的监听器，之前已经有了事件广播器，此时就可以派发一些early application events
-			// 11）完成容器bean factory的初始化，并初始化所有剩余的单例bean。这一步非常重要，一些bean postprocessor会在这里调用。
-			// 12）完成容器的刷新工作，并且调用生命周期处理器的onRefresh()方法，并且发布ContextRefreshedEvent事件
+			/**
+			 * 【7】刷新容器，这一步至关重要，以后会在分析Spring源码时详细分析，主要做了以下工作：
+			 * 1）在context刷新前做一些准备工作，比如初始化一些属性设置，属性合法性校验和保存容器中的一些早期事件等；
+			 * 2）让子类刷新其内部bean factory,注意SpringBoot和Spring启动的情况执行逻辑不一样
+			 * 3）对bean factory进行配置，比如配置bean factory的类加载器，后置处理器等
+			 * 4）完成bean factory的准备工作后，此时执行一些后置处理逻辑，子类通过重写这个方法来在BeanFactory创建并预准备完成以后做进一步的设置
+			 * 在这一步，所有的bean definitions将会被加载，但此时bean还不会被实例化
+			 * 5）执行BeanFactoryPostProcessor的方法即调用bean factory的后置处理器：
+			 * BeanDefinitionRegistryPostProcessor（触发时机：bean定义注册之前）和BeanFactoryPostProcessor（触发时机：bean定义注册之后bean实例化之前）
+			 * 6）注册bean的后置处理器BeanPostProcessor，注意不同接口类型的BeanPostProcessor；在Bean创建前后的执行时机是不一样的
+			 * 7）初始化国际化MessageSource相关的组件，比如消息绑定，消息解析等
+			 * 8）初始化事件广播器，如果bean factory没有包含事件广播器，那么new一个SimpleApplicationEventMulticaster广播器对象并注册到bean factory中
+			 * 9）AbstractApplicationContext定义了一个模板方法onRefresh，留给子类覆写，比如ServletWebServerApplicationContext覆写了该方法来创建内嵌的tomcat容器
+			 * 10）注册实现了ApplicationListener接口的监听器，之前已经有了事件广播器，此时就可以派发一些early application events
+			 * 11）完成容器bean factory的初始化，并初始化所有剩余的单例bean。这一步非常重要，一些bean postprocessor会在这里调用。
+			 * 12）完成容器的刷新工作，并且调用生命周期处理器的onRefresh()方法，并且发布ContextRefreshedEvent事件
+			 **/
 			refreshContext(context);
 			afterRefresh(context, applicationArguments);
 			stopWatch.stop();
